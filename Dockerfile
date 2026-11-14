@@ -6,7 +6,7 @@
 # reference deployment), which resolves the version and post-processes the
 # binary; a manual zip download produced a binary whose Juggler protocol was
 # missing Browser.setDownloadOptions.
-FROM node:22-slim
+FROM node:24-slim
 
 ARG SOURCE_REPO=https://github.com/anschmieg/camofox-browser.git
 ARG SOURCE_REF=cd15f82e667289d931f73f621dea7ad4503bcacd
