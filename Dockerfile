@@ -1,14 +1,17 @@
-FROM node:22-slim AS camofox-browser
+# Camofox browser server — self-contained build for Coolify.
+#
+# Coolify's inline-dockerfile deployments have no build context, so the pinned
+# source is fetched from the deployment repo at build time. The Camoufox
+# browser binary is fetched with camoufox-js itself (the same code path as the
+# reference deployment), which resolves the version and post-processes the
+# binary; a manual zip download produced a binary whose Juggler protocol was
+# missing Browser.setDownloadOptions.
+FROM node:22-slim
 
-# Pinned Camoufox version for reproducible builds
-# Update these when upgrading Camoufox
-ARG CAMOUFOX_VERSION=158.0.1
-ARG CAMOUFOX_RELEASE=beta.41
-ARG ARCH=x86_64
+ARG SOURCE_REPO=https://github.com/anschmieg/camofox-browser.git
+ARG SOURCE_REF=cd15f82e667289d931f73f621dea7ad4503bcacd
 
-# Install dependencies for Camoufox (Firefox-based)
-RUN apt-get update && apt-get install -y \
-    # Firefox dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk-3-0 \
     libdbus-glib-1-2 \
     libxt6 \
@@ -23,65 +26,45 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     libxss1 \
     libxtst6 \
-    # Mesa OpenGL/EGL for WebGL support (software rendering via llvmpipe)
-    # Without these, Firefox cannot create WebGL contexts -- a major bot detection signal
     libegl1-mesa \
     libgl1-mesa-dri \
     libgbm1 \
-    # Xvfb virtual display -- runs Camoufox as if on a real desktop (better anti-detection)
     xvfb \
-    # Fonts
     fonts-liberation \
     fonts-noto-color-emoji \
     fontconfig \
-    # Utils
     ca-certificates \
     curl \
     unzip \
-    # yt-dlp runtime dependency
-    python3-minimal \
+    git \
+    python3 \
+    python3-dev \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Pre-bake Camoufox browser binary into image (downloaded at build time)
-# Note: unzip returns exit code 1 for warnings (Unicode filenames), so we use || true and verify
-RUN mkdir -p /root/.cache/camoufox \
-    && curl -L -o /tmp/camoufox.zip "https://github.com/daijro/camoufox/releases/download/v${CAMOUFOX_VERSION}-${CAMOUFOX_RELEASE}/camoufox-${CAMOUFOX_VERSION}-${CAMOUFOX_RELEASE}-lin.${ARCH}.zip" \
-    && (unzip -q /tmp/camoufox.zip -d /root/.cache/camoufox || true) \
-    && rm /tmp/camoufox.zip \
-    && chmod -R 755 /root/.cache/camoufox \
-    && echo "{\"version\":\"${CAMOUFOX_VERSION}\",\"release\":\"${CAMOUFOX_RELEASE}\"}" > /root/.cache/camoufox/version.json \
-    && test -f /root/.cache/camoufox/camoufox-bin && echo "Camoufox installed successfully"
-
-# Install yt-dlp for YouTube transcript extraction (no browser needed)
+# yt-dlp for the YouTube transcript plugin.
 RUN curl -L -o /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp" \
     && chmod 755 /usr/local/bin/yt-dlp
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-COPY scripts/ ./scripts/
+# Pinned source from the deployment repo.
+RUN git clone --depth 1 --branch master "$SOURCE_REPO" /tmp/src \
+    && git -C /tmp/src fetch --depth 1 origin "$SOURCE_REF" \
+    && git -C /tmp/src checkout --quiet "$SOURCE_REF" \
+    && cp -a /tmp/src/. /app/ \
+    && rm -rf /tmp/src
+
 RUN npm ci --omit=dev
 
-COPY server.js ./
-COPY camofox.config.json ./
-COPY lib/ ./lib/
-COPY plugins/ ./plugins/
-COPY scripts/ ./scripts/
+# Camoufox binary via camoufox-js (resolves version + arch, post-processes).
+RUN node node_modules/camoufox-js/dist/__main__.js fetch
 
-# Install default plugin dependencies (apt packages + post-install hooks)
 RUN sh scripts/install-plugin-deps.sh
 
 ENV NODE_ENV=production
-ENV CAMOFOX_PORT=9377
+ENV CAMOFOX_PORT=9379
 
-EXPOSE 9377
+EXPOSE 9379
 
-CMD ["sh", "-c", "node --max-old-space-size=${MAX_OLD_SPACE_SIZE:-128} server.js"]
-
-# Optional: rebuild plugin deps after adding third-party plugins
-# Usage: docker build --target with-plugins -t camofox-browser .
-FROM camofox-browser AS with-plugins
-COPY plugins/ ./plugins/
-COPY camofox.config.json ./
-COPY scripts/install-plugin-deps.sh /tmp/install-plugin-deps.sh
-RUN /tmp/install-plugin-deps.sh && rm /tmp/install-plugin-deps.sh
+CMD ["sh", "-c", "node --max-old-space-size=${MAX_OLD_SPACE_SIZE:-512} server.js"]
