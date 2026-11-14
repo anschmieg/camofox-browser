@@ -1,0 +1,33 @@
+services:
+  camofox:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${CAMOFOX_PORT:-9379}:${CAMOFOX_PORT:-9379}"
+    environment:
+      - CAMOFOX_PORT=${CAMOFOX_PORT:-9379}
+      - CAMOFOX_BIND_HOST=0.0.0.0
+      - CAMOFOX_ACCESS_KEY=${CAMOFOX_ACCESS_KEY}
+      - CAMOFOX_API_KEY=${CAMOFOX_API_KEY}
+      - CAMOFOX_ADMIN_KEY=${CAMOFOX_ADMIN_KEY}
+      - CAMOFOX_PROXY_URL=${CAMOFOX_PROXY_URL}
+      - CAMOFOX_PROFILE_DIR=/data/profiles
+      - CAMOFOX_COOKIES_DIR=/data/cookies
+      - CAMOFOX_UPLOADS_DIR=/data/uploads
+      - CAMOFOX_TRACES_DIR=/data/traces
+      - STREAM_TAP_PATH=/app/integrations/stream_tap.js
+    volumes:
+      - camofox-profiles:/data/profiles
+      - camofox-cookies:/data/cookies
+      - camofox-uploads:/data/uploads
+      - camofox-traces:/data/traces
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:${CAMOFOX_PORT:-9379}/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  camofox-profiles:
+  camofox-cookies:
+  camofox-uploads:
+  camofox-traces:
