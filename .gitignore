@@ -1,0 +1,8 @@
+node_modules/
+*.log
+camofox.config.json
+profiles/
+cookies/
+uploads/
+traces/
+downloads/
