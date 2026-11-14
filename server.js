@@ -2536,7 +2536,14 @@ function getStackVersions() {
   const versions = { node: process.version };
   try {
     versions.playwright = require('playwright-core/package.json').version;
-  } catch (_) {}
+  } catch (e) {
+    versions.playwright = `unresolved: ${e.message?.split('\n')[0]}`;
+    try {
+      versions.playwrightResolve = import.meta.resolve('playwright-core');
+    } catch (e2) {
+      versions.playwrightResolve = `unresolved: ${e2.message?.split('\n')[0]}`;
+    }
+  }
   try {
     const camoufoxDir = process.env.CAMOUFOX_INSTALL_DIR || path.join(os.homedir(), '.cache', 'camoufox');
     versions.camoufox = JSON.parse(fs.readFileSync(path.join(camoufoxDir, 'version.json'), 'utf-8'));
