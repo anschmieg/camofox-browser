@@ -2535,14 +2535,13 @@ async function refreshTabRefs(tabState, options = {}) {
 function getStackVersions() {
   const versions = { node: process.version };
   try {
-    versions.playwright = require('playwright-core/package.json').version;
+    const resolved = import.meta.resolve('playwright-core');
+    versions.playwrightPath = new URL('.', resolved).pathname;
+    versions.playwright = JSON.parse(
+      fs.readFileSync(path.join(new URL('.', resolved).pathname, 'package.json'), 'utf-8')
+    ).version;
   } catch (e) {
     versions.playwright = `unresolved: ${e.message?.split('\n')[0]}`;
-    try {
-      versions.playwrightResolve = import.meta.resolve('playwright-core');
-    } catch (e2) {
-      versions.playwrightResolve = `unresolved: ${e2.message?.split('\n')[0]}`;
-    }
   }
   try {
     const camoufoxDir = process.env.CAMOUFOX_INSTALL_DIR || path.join(os.homedir(), '.cache', 'camoufox');
