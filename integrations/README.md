@@ -1,9 +1,9 @@
-# ChatGPT stream tap (paired copy)
+# Integrations
 
-`stream_tap.js` is maintained in the chatgpt2api fork
-(`services/browser_bridge/stream_tap.js`) and copied here at release time.
-The camofox server injects it into every browser context at creation
-(`STREAM_TAP_PATH` env, set in the Coolify app to this file).
+`STREAM_TAP_PATH` (env, optional): path to a JS file injected into every
+browser context at creation. The chatgpt2api bridge injects its stream tap
+per-tab after navigation (via /tabs/{id}/evaluate), so this is optional.
 
-When updating the fork's tap, copy it here and redeploy camofox — the canary
-(`services.browser_bridge.canary`) catches drift.
+Paired copies (e.g. the chatgpt2api fork's stream_tap.js) are NOT stored in
+this repo — the fork is private. Mount or bake one at deploy time if the
+init-script injection is needed.

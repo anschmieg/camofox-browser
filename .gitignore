@@ -6,3 +6,7 @@ cookies/
 uploads/
 traces/
 downloads/
+pending_*.mjs
+*_guard*.mjs
+private_store.mjs
+server.paperclip.js
