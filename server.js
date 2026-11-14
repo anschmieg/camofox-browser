@@ -4,6 +4,7 @@ import { firefox } from 'playwright-core';
 import express from 'express';
 import crypto from 'crypto';
 import fs from 'fs';
+import path from 'path';
 import os from 'os';
 import { expandMacro } from './lib/macros.js';
 import { loadConfig } from './lib/config.js';
@@ -2528,6 +2529,21 @@ async function refreshTabRefs(tabState, options = {}) {
  *                 recovering:
  *                   type: boolean
  */
+// Version fingerprints for drift detection: a playwright/camoufox mismatch
+// shows up as protocol errors (e.g. Browser.setDownloadOptions), which are
+// painful to debug blind.
+function getStackVersions() {
+  const versions = { node: process.version };
+  try {
+    versions.playwright = require('playwright-core/package.json').version;
+  } catch (_) {}
+  try {
+    const camoufoxDir = process.env.CAMOUFOX_INSTALL_DIR || path.join(os.homedir(), '.cache', 'camoufox');
+    versions.camoufox = JSON.parse(fs.readFileSync(path.join(camoufoxDir, 'version.json'), 'utf-8'));
+  } catch (_) {}
+  return versions;
+}
+
 app.get('/health', (req, res) => {
   if (healthState.isRecovering) {
     return res.status(503).json({ ok: false, engine: 'camoufox', recovering: true });
@@ -2563,6 +2579,7 @@ app.get('/health', (req, res) => {
     activeSessions: sessions.size,
     consecutiveFailures: healthState.consecutiveNavFailures,
     memory: { rssMb, heapUsedMb, nativeMemMb },
+    versions: getStackVersions(),
     ...(FLY_MACHINE_ID ? { machineId: FLY_MACHINE_ID } : {}),
   });
 });
