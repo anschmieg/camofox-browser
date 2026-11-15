@@ -848,7 +848,19 @@ async function probeGoogleSearch(candidateBrowser) {
   }
 }
 
-function attachBrowserCleanup(candidateBrowser, localVirtualDisplay) {
+// camoufox-js writes DISPLAY into process.env when it launches with a virtual
+// display (its `env` option defaults to process.env). Xvfb dies together with
+// the browser, so leaving that variable behind makes the *next* launch take the
+// "existing DISPLAY" branch, skip starting Xvfb and fail with
+// "Error: cannot open display: :0" until the server process is restarted.
+function forgetVirtualDisplayEnv(display) {
+  if (display && process.env.DISPLAY === display) {
+    delete process.env.DISPLAY;
+    log('info', 'cleared stale DISPLAY from env', { display });
+  }
+}
+
+function attachBrowserCleanup(candidateBrowser, localVirtualDisplay, display) {
   const origClose = candidateBrowser.close.bind(candidateBrowser);
   candidateBrowser.close = async (...args) => {
     await origClose(...args);
@@ -856,6 +868,7 @@ function attachBrowserCleanup(candidateBrowser, localVirtualDisplay) {
     if (localVirtualDisplay) {
       localVirtualDisplay.kill();
       if (virtualDisplay === localVirtualDisplay) virtualDisplay = null;
+      forgetVirtualDisplayEnv(display);
     }
   };
 }
@@ -1100,7 +1113,10 @@ async function launchBrowserInstance() {
           });
           if (attempt < maxAttempts) {
             await candidateBrowser.close().catch(() => {});
-            if (localVirtualDisplay) localVirtualDisplay.kill();
+            if (localVirtualDisplay) {
+              localVirtualDisplay.kill();
+              forgetVirtualDisplayEnv(vdDisplay);
+            }
             continue;
           }
           // Last attempt: accept browser in degraded mode rather than death-spiraling.
@@ -1118,7 +1134,7 @@ async function launchBrowserInstance() {
       browser = candidateBrowser; // publish AFTER PID is captured
       _lastBrowserStopReason = null; // clear — browser is healthy
       _lastBrowserRestartAt = Date.now();
-      attachBrowserCleanup(browser, localVirtualDisplay);
+      attachBrowserCleanup(browser, localVirtualDisplay, vdDisplay);
       pluginEvents.emit('browser:launched', { browser, display: vdDisplay });
 
       log('info', 'camoufox launched', {
@@ -1139,7 +1155,10 @@ async function launchBrowserInstance() {
         proxySession: launchProxy?.sessionId || null,
       });
       await candidateBrowser?.close().catch(() => {});
-      if (localVirtualDisplay) localVirtualDisplay.kill();
+      if (localVirtualDisplay) {
+        localVirtualDisplay.kill();
+        forgetVirtualDisplayEnv(vdDisplay);
+      }
     }
   }
 
