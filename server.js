@@ -860,6 +860,54 @@ function forgetVirtualDisplayEnv(display) {
   }
 }
 
+// Playwright restores a persisted storageState into every new context. A
+// long-lived browser eventually refuses that restore with a generic error:
+//
+//   browser.newContext: Error setting storage state:
+//   Unable to restore IndexedDB: The operation failed for reasons unrelated to
+//   the database itself and not covered by any other error code.
+//
+// Once it happens, every later session fails the same way until the browser
+// process is replaced, which takes the whole bridge down with it. Recover in
+// place: restart the browser when no other session depends on it and try again,
+// and as a last resort open the context without the stored profile so the
+// caller still gets a usable tab.
+function isStorageStateRestoreError(err) {
+  return /setting storage state|restore IndexedDB/i.test(String(err?.message || err));
+}
+
+async function newContextWithStorageRecovery(browserInstance, contextOptions, userId) {
+  try {
+    return await browserInstance.newContext(contextOptions);
+  } catch (err) {
+    if (!isStorageStateRestoreError(err)) throw err;
+    log('warn', 'storage state restore failed', { userId, error: err.message.slice(0, 200) });
+
+    if (sessions.size === 0) {
+      try {
+        await closeBrowserFully('storage_state_restore_failed');
+        const freshBrowser = await ensureBrowser();
+        const context = await freshBrowser.newContext(contextOptions);
+        log('info', 'storage state restored after browser restart', { userId });
+        return context;
+      } catch (retryErr) {
+        log('warn', 'storage state restore still failing after restart', {
+          userId,
+          error: retryErr?.message?.slice(0, 200) || String(retryErr),
+        });
+      }
+    }
+
+    // The tab matters more than the stored profile: the next checkpoint
+    // overwrites the snapshot with whatever this context can read.
+    const { storageState, ...withoutState } = contextOptions;
+    if (!storageState) throw err;
+    const context = await browserInstance.newContext(withoutState);
+    log('warn', 'session created without restored storage state', { userId });
+    return context;
+  }
+}
+
 function attachBrowserCleanup(candidateBrowser, localVirtualDisplay, display) {
   const origClose = candidateBrowser.close.bind(candidateBrowser);
   candidateBrowser.close = async (...args) => {
@@ -1324,7 +1372,7 @@ async function getSession(userId, { trace = false } = {}) {
         log('info', 'session proxy assigned', { userId: key, proxy: sessionProxy.server });
       }
       await pluginEvents.emitAsync('session:creating', { userId: key, contextOptions });
-      const context = await b.newContext(contextOptions);
+      const context = await newContextWithStorageRecovery(b, contextOptions, key);
       try {
         const streamTapPath = process.env.STREAM_TAP_PATH || '';
         if (streamTapPath) {
